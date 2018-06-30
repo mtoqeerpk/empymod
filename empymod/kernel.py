@@ -33,6 +33,7 @@ root directory for more information regarding the involved licenses.
 # the License.
 
 
+import numba
 import numpy as np
 
 # Imports for halfspace solution
@@ -182,10 +183,7 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
             e_zH, e_zV, z_eH = zetaH, zetaV, etaH  # TE: etaV not used
 
         # Uppercase gamma
-        # 1. IMPLEMENT NUMBA
-        Gam = np.sqrt((e_zH/e_zV)[:, None, :, None] *
-                      (lambd*lambd)[None, :, None, :] +
-                      (z_eH*e_zH)[:, None, :, None])
+        Gam = get_gamma(e_zH, e_zV, z_eH, lambd)
 
         # Gamma in receiver layer
         lrecGam = Gam[:, :, lrec, :]
@@ -198,14 +196,12 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
             # (Up- (Wu) and downgoing (Wd), in rec layer); Eq 74
             if lrec != depth.size-1:  # No upgoing field prop. if rec in last
                 ddepth = depth[lrec + 1] - zrec
-                # 2. IMPLEMENT NUMBA
-                Wu = np.exp(-lrecGam*ddepth)
+                Wu = get_exp_gam_d(-lrecGam, float(ddepth))
             else:
                 Wu = np.full_like(lrecGam, 0+0j)
             if lrec != 0:     # No downgoing field propagator if rec in first
                 ddepth = zrec - depth[lrec]
-                # 3. IMPLEMENT NUMBA
-                Wd = np.exp(-lrecGam*ddepth)
+                Wd = get_exp_gam_d(-lrecGam, float(ddepth))
             else:
                 Wd = np.full_like(lrecGam, 0+0j)
 
@@ -226,7 +222,7 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
             # Direct field, if it is computed in the wavenumber domain
             if not xdirect:
                 # Direct field
-                directf = np.exp(-lrecGam*abs(zsrc - zrec))
+                directf = get_exp_gam_d(-lrecGam, float(abs(zsrc - zrec)))
 
                 # Swap TM for certain <ab>
                 if TM and ab in [11, 12, 13, 14, 15, 21, 22, 23, 24, 25]:
@@ -246,8 +242,7 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
                 ddepth = 0
             else:
                 ddepth = depth[lrec+1] - depth[lrec]
-            # 4. IMPLEMENT NUMBA
-            fexp = np.exp(-lrecGam*ddepth)
+            fexp = get_exp_gam_d(-lrecGam, float(ddepth))
 
             # Sign-switch for Green calculation
             if TM and ab in [11, 12, 13, 21, 22, 23, 14, 24, 15, 25]:
@@ -350,7 +345,7 @@ def reflections(depth, e_zH, Gam, lrec, lsrc):
             Gama = Gam[:, :, iz, :]
             e_zHb = e_zH[:, None, iz, None]
             Gamb = Gam[:, :, iz+pm, :]
-            # 5. IMPLEMENT NUMBA
+            # 1-a. IMPLEMENT NUMBA
             rloca = e_zHa*Gama
             rlocb = e_zHb*Gamb
             rloc = (rloca - rlocb)/(rloca + rlocb)
@@ -363,9 +358,9 @@ def reflections(depth, e_zH, Gam, lrec, lsrc):
                 iGam = Gam[:, :, iz+pm, :]
 
                 # Eqs 64, A-11
-                # 6. IMPLEMENT NUMBA
-                term = tRef*np.exp(-2*iGam*ddepth)  # NOQA
-                tRef = (rloc + term)/(1 + rloc*term)
+                # 1-b. IMPLEMENT NUMBA
+                term = get_exp_gam_d(-2*iGam, float(ddepth))
+                tRef = (rloc + tRef*term)/(1 + rloc*tRef*term)
 
             # The global reflection coefficient is given back for all layers
             # between and including src- and rec-layer
@@ -473,12 +468,13 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM):
         if lsrc == lrec:  # rec in src layer; Eqs  81/82, A-8/A-9
             iGam = Gam[:, :, lsrc, :]
             if last_layer:  # If src/rec are in top (up) or bottom (down) layer
-                # 7. IMPLEMENT NUMBA
-                P = Rmp*np.exp(-iGam*dm)
+                P = Rmp*get_exp_gam_d(-iGam, float(dm))
             else:           # If src and rec are in any layer in between
-                # 8. IMPLEMENT NUMBA
-                Ms = 1 - Rmp*Rpm*np.exp(-2*iGam*ds)
-                P = Rmp/Ms*(np.exp(-iGam*dm) + pm*Rpm*np.exp(-iGam*(ds+dp)))
+                # 1-c. IMPLEMENT NUMBA
+                Ms = 1 - Rmp*Rpm*get_exp_gam_d(-2*iGam, float(ds))
+                exp1 = get_exp_gam_d(-iGam, float(dm))
+                exp2 = get_exp_gam_d(-iGam, float(ds+dp))
+                P = Rmp/Ms*(exp1 + pm*Rpm*exp2)
 
         else:           # rec above (up) / below (down) src layer
                         # Eqs  95/96,  A-24/A-25 for rec above src layer
@@ -488,22 +484,21 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM):
             iRpm = Rpm[:, :, rsrcl, :]
             iGam = Gam[:, :, lsrc, :]
             if first_layer:  # If src is in bottom (up) / top (down) layer
-                # 9. IMPLEMENT NUMBA
-                P = (1 + iRpm)*mupm*np.exp(-iGam*dp)
+                P = (1 + iRpm)*mupm*get_exp_gam_d(-iGam, float(dp))
             else:
                 iRmp = Rmp[:, :, rsrcl, :]
-                # 10. IMPLEMENT NUMBA
-                Ms = 1 - iRmp*iRpm * np.exp(-2*iGam*ds)
-                P = ((1 + iRpm)*(mupm*np.exp(-iGam*dp) +
-                     pm*mupm*iRmp*np.exp(-iGam * (ds+dm))))/Ms
+                # 1-d. IMPLEMENT NUMBA
+                Ms = 1 - iRmp*iRpm*get_exp_gam_d(-2*iGam, float(ds))
+                exp1 = get_exp_gam_d(-iGam, float(dp))
+                exp2 = get_exp_gam_d(-iGam, float(ds+dm))
+                P = ((1 + iRpm)*(mupm*exp1 + pm*mupm*iRmp*exp2))/Ms
 
             # If up or down and src is in last but one layer
             if up or (not up and lsrc+1 < depth.size-1):
                 ddepth = depth[lsrc+1-1*pup]-depth[lsrc-1*pup]
                 iRpm = Rpm[:, :, rsrcl-1*pup, :]
                 iGam = Gam[:, :, lsrc-1*pup, :]
-                # 11. IMPLEMENT NUMBA
-                P /= (1 + iRpm*np.exp(-2*iGam * ddepth))
+                P /= (1 + iRpm*get_exp_gam_d(-2*iGam, float(ddepth)))
 
             # Second compute P for all other layers
             if nlsr > 2:
@@ -511,16 +506,14 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM):
                     ddepth = depth[isr+iz+pup+1]-depth[isr+iz+pup]
                     iRpm = Rpm[:, :, iz+pup, :]
                     iGam = Gam[:, :, isr+iz+pup, :]
-                    # 12. IMPLEMENT NUMBA
-                    P *= (1 + iRpm)*np.exp(-iGam * ddepth)
+                    P *= (1 + iRpm)*get_exp_gam_d(-iGam, float(ddepth))
 
                     # If rec/src NOT in first/last layer (up/down)
                     if isr+iz != last:
                         ddepth = depth[isr+iz+1] - depth[isr+iz]
                         iRpm = Rpm[:, :, iz, :]
                         iGam = Gam[:, :, isr+iz, :]
-                        # 13. IMPLEMENT NUMBA
-                        P /= 1 + iRpm*np.exp(-2*iGam * ddepth)
+                        P /= 1 + iRpm*get_exp_gam_d(-2*iGam, float(ddepth))
 
         # Store P in Pu/Pd
         if up:
@@ -1075,3 +1068,35 @@ def halfspace(off, angle, zsrc, zrec, etaH, etaV, freqtime, ab, signal,
         return direct_TE, direct_TM, reflect_TE, reflect_TM, air
     else:
         return direct + reflect + air
+
+
+# Numba functions
+
+# Gamma
+@numba.njit(nogil=True, parallel=True)
+def get_gamma(eH, eV, zH, l):
+    o1, o3 = eH.shape
+    o2, o4 = l.shape
+    out = np.empty((o1, o2, o3, o4), dtype=numba.complex128)
+    for nf in numba.prange(o1):
+        for nl in numba.prange(o3):
+            ieH = eH[nf, nl]
+            ieV = eV[nf, nl]
+            izH = zH[nf, nl]
+            for no in numba.prange(o2):
+                for ni in numba.prange(o4):
+                    il = l[no, ni]
+                    out[nf, no, nl, ni] = np.sqrt(ieH/ieV * il*il + izH*ieH)
+    return out
+
+
+# exp(Gamma * d)
+@numba.njit(nogil=True, parallel=True)
+def get_exp_gam_d(lGam, d):
+    o1, o2, o3 = lGam.shape
+    out = np.empty((o1, o2, o3), dtype=numba.complex128)
+    for nf in numba.prange(o1):
+        for no in numba.prange(o2):
+            for ni in numba.prange(o3):
+                out[nf, no, ni] = np.exp(lGam[nf, no, ni] * d)
+    return out

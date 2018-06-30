@@ -44,8 +44,8 @@ zetaH = np.outer(2j*np.pi*freq, mpermH*mu_0)
 zetaV = np.outer(2j*np.pi*freq, mpermV*mu_0)
 lambd = filters.key_51_2012().base/np.array([0.001, 1, 100, 10000])[:, None]
 depth = np.array([-np.infty, 0, 150, 300, 500, 600])
-inp1 = {'zsrc': np.array([100]),
-        'zrec': np.array([650]),
+inp1 = {'zsrc': np.array(100),
+        'zrec': np.array(650),
         'lsrc': np.array(1),
         'lrec': np.array(5),
         'depth': depth,
@@ -66,11 +66,11 @@ for key, val in iab.items():
 inp2 = deepcopy(inp1)
 # Source and receiver in same layer (last)
 inp3 = deepcopy(inp1)
-inp3['zsrc'] = np.array([610])
+inp3['zsrc'] = np.array(610)
 inp3['lsrc'] = np.array(5)
 # Receiver in first layer
 inp4 = deepcopy(inp1)
-inp4['zrec'] = np.array([-30])
+inp4['zrec'] = np.array(-30)
 inp4['lrec'] = np.array(0)
 green = {}
 for key, val in iab.items():
@@ -118,7 +118,7 @@ inp8 = {'depth': depth,
         'Gam': Gam,
         'lrec': inp6['lrec'],
         'lsrc': inp6['lsrc'],
-        'zsrc': np.array([350])}
+        'zsrc': np.array(350)}
 
 # Source and receiver in same layer, but not last
 Rp4, Rm4 = kernel.reflections(depth, etaH, Gam, np.array(5),
@@ -129,7 +129,7 @@ inp10 = {'depth': depth,
          'Gam': Gam,
          'lrec': np.array(5),
          'lsrc': np.array(5),
-         'zsrc': np.array([700])}
+         'zsrc': np.array(700)}
 
 # Receiver in first layer, source in last
 Rp3, Rm3 = kernel.reflections(depth, etaH, Gam, np.array(0),
@@ -140,7 +140,7 @@ inp9 = {'depth': depth,
         'Gam': Gam,
         'lrec': np.array(0),
         'lsrc': np.array(5),
-        'zsrc': np.array([700])}
+        'zsrc': np.array(700)}
 
 # Source in first layer, receiver in last
 Rp5, Rm5 = kernel.reflections(depth, etaH, Gam, np.array(5),
@@ -151,7 +151,7 @@ inp11 = {'depth': depth,
          'Gam': Gam,
          'lrec': np.array(5),
          'lsrc': np.array(0),
-         'zsrc': np.array([-30])}
+         'zsrc': np.array(-30)}
 
 
 fields = {}
