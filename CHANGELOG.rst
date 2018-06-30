@@ -1,6 +1,18 @@
 Changelog
 #########
 
+branch numba
+------------
+
+- Completely removed possibility for ``opt`` (None, ``parallel``, ``spline``)
+- Completely removed ``numexpr``
+- Removed therefore all functions and tests related to ``opt`` and ``numexpr``
+- Removed support for Python 3.4
+- Made ``numba`` a dependency
+- This is just a proof of concept, but dev shifted to numba2-branch.
+
+
+
 v1.7.1 - *2018-06-19*
 ---------------------
 

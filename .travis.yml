@@ -2,7 +2,6 @@
 language: python
 python:
   # We don't actually use the Travis Python, but this keeps it organized.
-  - "3.4"
   - "3.5"
   - "3.6"
   - "3.6.0"  # Dummy: Python 3.6 without numexpr, matplotlib, IPython
