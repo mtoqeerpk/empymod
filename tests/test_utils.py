@@ -8,6 +8,10 @@ try:
 except ImportError:
     use_vml = False
     use_ne_eval = False
+try:
+    import numba
+except ImportError:
+    numba = False
 
 from empymod import utils, filters
 
@@ -380,10 +384,14 @@ def test_check_opt(capsys):
     assert out[:53] == outstr
 
     res = utils.check_opt('numba', None, 'fht', fhtarg, 4)
-    assert res[0] == 'numba'
+    if numba:
+        assert res[0] == 'numba'
+        outstr = "   Kernel Opt.     :  Use numba\n   Loop over       :  Freq"
+    else:
+        assert res[0] is False
+        outstr = "   Kernel Opt.     :  None\n   Loop over       :  Freq"
     assert_allclose(res[1:], (True, False))
     out, _ = capsys.readouterr()
-    outstr = "   Kernel Opt.     :  Use numba\n   Loop over       :  Freq"
     assert outstr in out
 
     res = utils.check_opt(None, 'off', 'hqwe', qwehtarg, 4)

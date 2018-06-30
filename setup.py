@@ -7,7 +7,7 @@ description = 'Open-source full 3D electromagnetic modeller for 1D VTI media'
 
 setup(
     name='empymod',
-    version='1.7.2.dev0',
+    version='1.7.2.dev0-numba',
     description=description,
     long_description=readme,
     author='Dieter Werthmüller',
