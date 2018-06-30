@@ -40,6 +40,12 @@ from scipy.special import ive, kve  # Modified Bessel functions
 from scipy.special import erfc      # Complementary error function
 from scipy.constants import mu_0    # Magn. perm.y of free space  [H/m]
 
+# Optional imports
+try:
+    import numba
+except ImportError:
+    numba = False
+
 np.seterr(all='ignore')
 
 __all__ = ['wavenumber', 'angle_factor', 'fullspace', 'greenfct',
@@ -182,7 +188,9 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
             e_zH, e_zV, z_eH = zetaH, zetaV, etaH  # TE: etaV not used
 
         # Uppercase gamma
-        if use_ne_eval:
+        if use_ne_eval == 'numba':
+            Gam = get_gamma(e_zH, e_zV, z_eH, lambd)
+        elif use_ne_eval:
             ez_ratio = (e_zH/e_zV)[:, None, :, None]  # NOQA
             ez_prod = (z_eH*e_zH)[:, None, :, None]  # NOQA
             lambd2 = use_ne_eval("lambd*lambd")[None, :, None, :]  # NOQA
@@ -203,7 +211,9 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
             # (Up- (Wu) and downgoing (Wd), in rec layer); Eq 74
             if lrec != depth.size-1:  # No upgoing field prop. if rec in last
                 ddepth = depth[lrec + 1] - zrec
-                if use_ne_eval:
+                if use_ne_eval == 'numba':
+                    Wu = get_exp_gam_d(-lrecGam, float(ddepth))
+                elif use_ne_eval:
                     Wu = use_ne_eval("exp(-lrecGam*ddepth)")
                 else:
                     Wu = np.exp(-lrecGam*ddepth)
@@ -211,7 +221,9 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
                 Wu = np.full_like(lrecGam, 0+0j)
             if lrec != 0:     # No downgoing field propagator if rec in first
                 ddepth = zrec - depth[lrec]
-                if use_ne_eval:
+                if use_ne_eval == 'numba':
+                    Wd = get_exp_gam_d(-lrecGam, float(ddepth))
+                elif use_ne_eval:
                     Wd = use_ne_eval("exp(-lrecGam*ddepth)")
                 else:
                     Wd = np.exp(-lrecGam*ddepth)
@@ -236,7 +248,10 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
             # Direct field, if it is computed in the wavenumber domain
             if not xdirect:
                 # Direct field
-                directf = np.exp(-lrecGam*abs(zsrc - zrec))
+                if use_ne_eval == 'numba':
+                    directf = get_exp_gam_d(-lrecGam, float(abs(zsrc - zrec)))
+                else:
+                    directf = np.exp(-lrecGam*abs(zsrc - zrec))
 
                 # Swap TM for certain <ab>
                 if TM and ab in [11, 12, 13, 14, 15, 21, 22, 23, 24, 25]:
@@ -256,7 +271,9 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
                 ddepth = 0
             else:
                 ddepth = depth[lrec+1] - depth[lrec]
-            if use_ne_eval:
+            if use_ne_eval == 'numba':
+                fexp = get_exp_gam_d(-lrecGam, float(ddepth))
+            elif use_ne_eval:
                 fexp = use_ne_eval("exp(-lrecGam*ddepth)")
             else:
                 fexp = np.exp(-lrecGam*ddepth)
@@ -362,7 +379,12 @@ def reflections(depth, e_zH, Gam, lrec, lsrc, use_ne_eval):
             Gama = Gam[:, :, iz, :]
             e_zHb = e_zH[:, None, iz, None]
             Gamb = Gam[:, :, iz+pm, :]
-            if use_ne_eval:
+            if use_ne_eval == 'numba':
+                # 1-a. IMPLEMENT NUMBA
+                rloca = e_zHa*Gama
+                rlocb = e_zHb*Gamb
+                rloc = (rloca - rlocb)/(rloca + rlocb)
+            elif use_ne_eval:
                 rlocstr = "(e_zHa*Gama - e_zHb*Gamb)/(e_zHa*Gama + e_zHb*Gamb)"
                 rloc = use_ne_eval(rlocstr)
             else:
@@ -378,7 +400,11 @@ def reflections(depth, e_zH, Gam, lrec, lsrc, use_ne_eval):
                 iGam = Gam[:, :, iz+pm, :]
 
                 # Eqs 64, A-11
-                if use_ne_eval:
+                if use_ne_eval == 'numba':
+                    # 1-b. IMPLEMENT NUMBA
+                    term = get_exp_gam_d(-2*iGam, float(ddepth))
+                    tRef = (rloc + tRef*term)/(1 + rloc*tRef*term)
+                elif use_ne_eval:
                     term = use_ne_eval("tRef*exp(-2*iGam*ddepth)")
                     tRef = use_ne_eval("(rloc + term)/(1 + rloc*term)")
                 else:
@@ -491,12 +517,20 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
         if lsrc == lrec:  # rec in src layer; Eqs  81/82, A-8/A-9
             iGam = Gam[:, :, lsrc, :]
             if last_layer:  # If src/rec are in top (up) or bottom (down) layer
-                if use_ne_eval:
+                if use_ne_eval == 'numba':
+                    P = Rmp*get_exp_gam_d(-iGam, float(dm))
+                elif use_ne_eval:
                     P = use_ne_eval("Rmp*exp(-iGam*dm)")
                 else:
                     P = Rmp*np.exp(-iGam*dm)
             else:           # If src and rec are in any layer in between
-                if use_ne_eval:
+                if use_ne_eval == 'numba':
+                    # 1-c. IMPLEMENT NUMBA
+                    Ms = 1 - Rmp*Rpm*get_exp_gam_d(-2*iGam, float(ds))
+                    exp1 = get_exp_gam_d(-iGam, float(dm))
+                    exp2 = get_exp_gam_d(-iGam, float(ds+dp))
+                    P = Rmp/Ms*(exp1 + pm*Rpm*exp2)
+                elif use_ne_eval:
                     Ms = use_ne_eval("1-Rmp*Rpm*exp(-2*iGam*ds)")
                     P = use_ne_eval("Rmp/Ms*(exp(-iGam*dm) + " +
                                     "pm*Rpm*exp(-iGam*(ds+dp)))")
@@ -513,13 +547,21 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
             iRpm = Rpm[:, :, rsrcl, :]
             iGam = Gam[:, :, lsrc, :]
             if first_layer:  # If src is in bottom (up) / top (down) layer
-                if use_ne_eval:
+                if use_ne_eval == 'numba':
+                    P = (1 + iRpm)*mupm*get_exp_gam_d(-iGam, float(dp))
+                elif use_ne_eval:
                     P = use_ne_eval("(1 + iRpm)*mupm*exp(-iGam*dp)")
                 else:
                     P = (1 + iRpm)*mupm*np.exp(-iGam*dp)
             else:
                 iRmp = Rmp[:, :, rsrcl, :]
-                if use_ne_eval:
+                if use_ne_eval == 'numba':
+                    # 1-d. IMPLEMENT NUMBA
+                    Ms = 1 - iRmp*iRpm*get_exp_gam_d(-2*iGam, float(ds))
+                    exp1 = get_exp_gam_d(-iGam, float(dp))
+                    exp2 = get_exp_gam_d(-iGam, float(ds+dm))
+                    P = ((1 + iRpm)*(mupm*exp1 + pm*mupm*iRmp*exp2))/Ms
+                elif use_ne_eval:
                     Ms = use_ne_eval("(1 - iRmp*iRpm * exp(-2*iGam*ds))")
                     P = use_ne_eval("((1 + iRpm)*(mupm*exp(-iGam*dp) + " +
                                     "pm*mupm*iRmp*exp(-iGam * (ds+dm))))/Ms")
@@ -533,7 +575,9 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
                 ddepth = depth[lsrc+1-1*pup]-depth[lsrc-1*pup]
                 iRpm = Rpm[:, :, rsrcl-1*pup, :]
                 iGam = Gam[:, :, lsrc-1*pup, :]
-                if use_ne_eval:
+                if use_ne_eval == 'numba':
+                    P /= (1 + iRpm*get_exp_gam_d(-2*iGam, float(ddepth)))
+                elif use_ne_eval:
                     P = use_ne_eval("P/(1 + iRpm*exp(-2*iGam * ddepth))")
                 else:
                     P /= (1 + iRpm*np.exp(-2*iGam * ddepth))
@@ -544,7 +588,9 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
                     ddepth = depth[isr+iz+pup+1]-depth[isr+iz+pup]
                     iRpm = Rpm[:, :, iz+pup, :]
                     iGam = Gam[:, :, isr+iz+pup, :]
-                    if use_ne_eval:
+                    if use_ne_eval == 'numba':
+                        P *= (1 + iRpm)*get_exp_gam_d(-iGam, float(ddepth))
+                    elif use_ne_eval:
                         P = use_ne_eval("P*(1 + iRpm)*exp(-iGam * ddepth)")
                     else:
                         P *= (1 + iRpm)*np.exp(-iGam * ddepth)
@@ -554,7 +600,9 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
                         ddepth = depth[isr+iz+1] - depth[isr+iz]
                         iRpm = Rpm[:, :, iz, :]
                         iGam = Gam[:, :, isr+iz, :]
-                        if use_ne_eval:
+                        if use_ne_eval == 'numba':
+                            P /= 1 + iRpm*get_exp_gam_d(-2*iGam, float(ddepth))
+                        elif use_ne_eval:
                             P = use_ne_eval("P/(1 + " +
                                             "iRpm*exp(-2*iGam * ddepth))")
                         else:
@@ -1113,3 +1161,36 @@ def halfspace(off, angle, zsrc, zrec, etaH, etaV, freqtime, ab, signal,
         return direct_TE, direct_TM, reflect_TE, reflect_TM, air
     else:
         return direct + reflect + air
+
+
+# Numba functions
+
+if numba:
+    # Gamma
+    @numba.njit(nogil=True, parallel=True)
+    def get_gamma(eH, eV, zH, l):
+        o1, o3 = eH.shape
+        o2, o4 = l.shape
+        out = np.empty((o1, o2, o3, o4), dtype=numba.complex128)
+        for nf in numba.prange(o1):
+            for nl in numba.prange(o3):
+                ieH = eH[nf, nl]
+                ieV = eV[nf, nl]
+                izH = zH[nf, nl]
+                for no in numba.prange(o2):
+                    for ni in numba.prange(o4):
+                        il = l[no, ni]
+                        out[nf, no, nl, ni] = np.sqrt(ieH/ieV * il*il +
+                                                      izH*ieH)
+        return out
+
+    # exp(Gamma * d)
+    @numba.njit(nogil=True, parallel=True)
+    def get_exp_gam_d(lGam, d):
+        o1, o2, o3 = lGam.shape
+        out = np.empty((o1, o2, o3), dtype=numba.complex128)
+        for nf in numba.prange(o1):
+            for no in numba.prange(o2):
+                for ni in numba.prange(o3):
+                    out[nf, no, ni] = np.exp(lGam[nf, no, ni] * d)
+        return out

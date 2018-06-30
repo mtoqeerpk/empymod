@@ -610,7 +610,11 @@ def test_tem():
 def test_regres():
     # Comparison to self (regression test)
     # 1836 cases; f = [0.01, 1, 100] Hz.; 18 models, 34 ab's, f altern.
-    dat = REGRES['res'][()]
-    for key, val in dat.items():
-        res = dipole(**val[0])
-        assert_allclose(res, val[1], 3e-2, 1e-17, True)
+    for i in range(2):
+        dat = REGRES['res'][()]
+        for key, val in dat.items():
+            model = val[0]
+            if i == 1:
+                model['opt'] = 'numba'
+            res = dipole(**model)
+            assert_allclose(res, val[1], 3e-2, 1e-17, True)

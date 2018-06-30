@@ -50,6 +50,11 @@ except ImportError:
     numexpr = False
     numexpr_msg = "* WARNING :: `numexpr` is not installed, "
     numexpr_msg += "`opt=='parallel'` has no effect."
+try:
+    import numba
+except ImportError:
+    numba = False
+
 
 # Relative imports
 from . import filters, transform
@@ -799,8 +804,9 @@ def check_opt(opt, loop, ht, htarg, verb):
 
     Parameters
     ----------
-    opt : {None, 'parallel'}
-        Optimization flag; use ``numexpr`` or not.
+    opt : {None, 'parallel', 'numba'}
+        Optimization flag; use ``numpy`` (None), ``numexpr`` ('parallel'), or
+        ``numba`` (`numba`).
 
     loop : {None, 'freq', 'off'}
         Loop flag.
@@ -817,8 +823,8 @@ def check_opt(opt, loop, ht, htarg, verb):
 
     Returns
     -------
-    use_ne_eval : bool
-        Boolean if to use ``numexpr``.
+    use_ne_eval : bool or str
+        False for ``numpy``, True for ``numexpr``, 'numba' for ``numba``.
 
     loop_freq : bool
         Boolean if to loop over frequencies.
@@ -835,6 +841,8 @@ def check_opt(opt, loop, ht, htarg, verb):
             use_ne_eval = numexpr.evaluate
         elif verb > 0:
             print(numexpr_msg)
+    elif opt == 'numba' and numba:
+        use_ne_eval = 'numba'
 
     # Define if to loop over frequencies or over offsets
     lagged_splined_fht = False
@@ -851,7 +859,9 @@ def check_opt(opt, loop, ht, htarg, verb):
 
     # If verbose, print optimization information
     if verb > 2:
-        if use_ne_eval:
+        if use_ne_eval == 'numba':
+            print("   Kernel Opt.     :  Use numba")
+        elif use_ne_eval:
             print("   Kernel Opt.     :  Use parallel")
         else:
             print("   Kernel Opt.     :  None")

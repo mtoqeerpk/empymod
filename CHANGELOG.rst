@@ -1,6 +1,14 @@
 Changelog
 #########
 
+branch numba2
+-------------
+
+- A go at implementing ``numba``
+- For now, alongside ``numexpr`` and ``numpy``
+- Should eventually replace ``numexpr``
+
+
 v1.7.1 - *2018-06-19*
 ---------------------
 

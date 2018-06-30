@@ -5,7 +5,7 @@ python:
   - "3.4"
   - "3.5"
   - "3.6"
-  - "3.6.0"  # Dummy: Python 3.6 without numexpr, matplotlib, IPython
+  - "3.6.0"  # Dummy: Python 3.6 without numba, numexpr, matplotlib, IPython
   - "3.6.1"  # Dummy: Python 3.6 with conda-forge (hence no VML)
 install:
   - sudo apt-get update
@@ -29,12 +29,12 @@ install:
       TEST="";
     elif [ ${TRAVIS_PYTHON_VERSION:4:5} == "1" ]; then
       TRAVIS_PYTHON_VERSION="3.6";
-      SOFT_DEP="numexpr matplotlib IPython";
+      SOFT_DEP="numba numexpr matplotlib IPython";
       CHAN="conda-forge";
       INST="pytest-mpl";
       TEST="--mpl";
     else
-      SOFT_DEP="mkl mkl-service numexpr matplotlib IPython";
+      SOFT_DEP="mkl mkl-service numba numexpr matplotlib IPython";
       CHAN="defaults";
       INST="pytest-mpl";
       TEST="--mpl";

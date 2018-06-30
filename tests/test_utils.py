@@ -379,6 +379,13 @@ def test_check_opt(capsys):
     outstr = "   Kernel Opt.     :  None\n   Loop over       :  Freq"
     assert out[:53] == outstr
 
+    res = utils.check_opt('numba', None, 'fht', fhtarg, 4)
+    assert res[0] == 'numba'
+    assert_allclose(res[1:], (True, False))
+    out, _ = capsys.readouterr()
+    outstr = "   Kernel Opt.     :  Use numba\n   Loop over       :  Freq"
+    assert outstr in out
+
     res = utils.check_opt(None, 'off', 'hqwe', qwehtarg, 4)
     assert_allclose(res, (False, True, False))
     out, _ = capsys.readouterr()

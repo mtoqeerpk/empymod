@@ -15,7 +15,7 @@ Always shown are the OS, number of CPU(s), ``numpy``, ``scipy``, ``empymod``,
 ``sys.version``, and time/date.
 
 Additionally shown are, if they can be imported, ``IPython``, ``matplotlib``,
-and ``numexpr``. It also shows MKL information, if available.
+``numba``, and ``numexpr``. It also shows MKL information, if available.
 
 All modules provided in ``add_pckg`` are also shown. They have to be imported
 before ``versions`` is called.
@@ -59,6 +59,10 @@ try:
     import matplotlib
 except ImportError:
     matplotlib = False
+try:
+    import numba
+except ImportError:
+    numba = False
 try:
     import numexpr
 except ImportError:
@@ -263,7 +267,7 @@ def _get_packages(add_pckg):
     pckgs = [numpy, scipy, empymod]
 
     # Optional packages
-    for module in [IPython, numexpr, matplotlib]:
+    for module in [IPython, numba, numexpr, matplotlib]:
         if module:
             pckgs += [module]
 
