@@ -30,26 +30,12 @@ This module consists of four groups of functions:
 
 
 # Mandatory imports
-import warnings
 import numpy as np
 from scipy import special
 from datetime import timedelta
 from timeit import default_timer
 from scipy.constants import mu_0       # Magn. permeability of free space [H/m]
 from scipy.constants import epsilon_0  # Elec. permittivity of free space [F/m]
-
-# Optional imports
-try:
-    import numexpr
-    # Ensure Intel's Vector Math Library
-    if not numexpr.use_vml:
-        numexpr = False
-        numexpr_msg = "* WARNING :: `numexpr` is not installed with VML, "
-        numexpr_msg += "`opt=='parallel'` has no effect."
-except ImportError:
-    numexpr = False
-    numexpr_msg = "* WARNING :: `numexpr` is not installed, "
-    numexpr_msg += "`opt=='parallel'` has no effect."
 
 # Relative imports
 from . import filters, transform
@@ -59,8 +45,7 @@ __all__ = ['EMArray', 'check_time_only', 'check_time', 'check_model',
            'check_frequency', 'check_hankel', 'check_opt', 'check_dipole',
            'check_bipole', 'check_ab', 'check_solution', 'get_abs',
            'get_geo_fact', 'get_azm_dip', 'get_off_ang', 'get_layer_nr',
-           'printstartfinish', 'conv_warning', 'set_minimum', 'get_minimum',
-           'spline_backwards_hankel']
+           'printstartfinish', 'conv_warning', 'set_minimum', 'get_minimum']
 
 # 0. General settings
 
@@ -790,7 +775,7 @@ def check_model(depth, res, aniso, epermH, epermV, mpermH, mpermV, xdirect,
     return depth, res, aniso, epermH, epermV, mpermH, mpermV, isfullspace
 
 
-def check_opt(opt, loop, ht, htarg, verb):
+def check_opt(loop, ht, htarg, verb):
     """Check optimization parameters.
 
     This check-function is called from one of the modelling routines in
@@ -799,9 +784,6 @@ def check_opt(opt, loop, ht, htarg, verb):
 
     Parameters
     ----------
-    opt : {None, 'parallel'}
-        Optimization flag; use ``numexpr`` or not.
-
     loop : {None, 'freq', 'off'}
         Loop flag.
 
@@ -817,9 +799,6 @@ def check_opt(opt, loop, ht, htarg, verb):
 
     Returns
     -------
-    use_ne_eval : bool
-        Boolean if to use ``numexpr``.
-
     loop_freq : bool
         Boolean if to loop over frequencies.
 
@@ -827,14 +806,6 @@ def check_opt(opt, loop, ht, htarg, verb):
         Boolean if to loop over offsets.
 
     """
-
-    # Check optimization flag
-    use_ne_eval = False
-    if opt == 'parallel':
-        if numexpr:
-            use_ne_eval = numexpr.evaluate
-        elif verb > 0:
-            print(numexpr_msg)
 
     # Define if to loop over frequencies or over offsets
     lagged_splined_fht = False
@@ -851,11 +822,6 @@ def check_opt(opt, loop, ht, htarg, verb):
 
     # If verbose, print optimization information
     if verb > 2:
-        if use_ne_eval:
-            print("   Kernel Opt.     :  Use parallel")
-        else:
-            print("   Kernel Opt.     :  None")
-
         if loop_off:
             print("   Loop over       :  Offsets")
         elif loop_freq:
@@ -863,7 +829,7 @@ def check_opt(opt, loop, ht, htarg, verb):
         else:
             print("   Loop over       :  None (all vectorized)")
 
-    return use_ne_eval, loop_freq, loop_off
+    return loop_freq, loop_off
 
 
 def check_time(time, signal, ft, ftarg, verb):
@@ -1900,46 +1866,3 @@ def _check_targ(targ, keys):
     if isinstance(targ, (list, tuple)):  # Put list into dict
         targ = {keys[i]: targ[i] for i in range(min(len(targ), len(keys)))}
     return targ
-
-
-# 5. Backwards compatibility
-
-def spline_backwards_hankel(ht, htarg, opt):
-    """Check opt if deprecated 'spline' is used.
-
-    Returns corrected htarg, opt.
-    """
-    # Ensure ht is all lowercase
-    ht = ht.lower()
-
-    # Only relevant for 'fht' and 'hqwe', not for 'quad'
-    if ht in ['fht', 'qwe', 'hqwe']:
-
-        # Get corresponding htarg
-        if ht == 'fht':
-            htarg = _check_targ(htarg, ['fhtfilt', 'pts_per_dec'])
-        elif ht in ['qwe', 'hqwe']:
-            htarg = _check_targ(htarg, ['rtol', 'atol', 'nquad', 'maxint',
-                                'pts_per_dec', 'diff_quad', 'a', 'b', 'limit'])
-
-        # If spline (qwe, fht) or lagged (fht)
-        if opt == 'spline':
-
-            # Issue warning
-            mesg = ("\n    The use of `opt='spline'` is deprecated and will " +
-                    "be removed\n    in v2.0.0; use the corresponding " +
-                    "setting in `htarg`.")
-            warnings.warn(mesg, DeprecationWarning)
-
-            # Reset opt
-            opt = None
-
-            # Check pts_per_dec; set to old default values if not given
-            if 'pts_per_dec' not in htarg:
-                if ht == 'fht':
-                    htarg['pts_per_dec'] = -1  # Lagged Convolution DLF
-
-                elif ht in ['qwe', 'hqwe']:
-                    htarg['pts_per_dec'] = 80  # Splined QWE; old default value
-
-    return htarg, opt

@@ -2,13 +2,6 @@ import pytest
 import numpy as np
 from numpy.testing import assert_allclose
 
-# See if numexpr is installed, and if it is, if it uses VML
-try:
-    from numexpr import use_vml, evaluate as use_ne_eval
-except ImportError:
-    use_vml = False
-    use_ne_eval = False
-
 from empymod import utils, filters
 
 
@@ -373,45 +366,35 @@ def test_check_opt(capsys):
     qwehtarg = [np.array(1e-12), np.array(1e-30), np.array(51), np.array(100),
                 np.array(33)]
 
-    res = utils.check_opt(None, None, 'fht', fhtarg, 4)
-    assert_allclose(res, (False, True, False))
+    res = utils.check_opt(None, 'fht', fhtarg, 4)
+    assert_allclose(res, (True, False))
     out, _ = capsys.readouterr()
-    outstr = "   Kernel Opt.     :  None\n   Loop over       :  Freq"
-    assert out[:53] == outstr
+    outstr = "Loop over       :  Freq"
+    assert outstr in out
 
-    res = utils.check_opt(None, 'off', 'hqwe', qwehtarg, 4)
-    assert_allclose(res, (False, True, False))
+    res = utils.check_opt(None, None, fhtarg, 4)
+    assert_allclose(res, (False, False))
     out, _ = capsys.readouterr()
-    outstr = "   Kernel Opt.     :  None\n   Loop over       :  Freq"
-    assert out[:53] == outstr
+    outstr = "Loop over       :  None (all vectorized)"
+    assert outstr in out
 
-    res = utils.check_opt('parallel', 'off', 'fht', [fhtarg[0], 0], 4)
-    if use_vml:
-        assert_allclose(callable(res[0]), True)
-        outstr = "   Kernel Opt.     :  Use parallel\n   Loop over       :  Of"
-    elif not use_ne_eval:
-        assert_allclose(callable(res[0]), False)
-        outstr = "* WARNING :: `numexpr` is not installed, `opt=='parallel'` "
-    else:
-        assert_allclose(callable(res[0]), False)
-        outstr = "* WARNING :: `numexpr` is not installed with VML, `opt=='pa"
-    assert_allclose(res[1:], (False, True))
+    res = utils.check_opt('off', 'hqwe', qwehtarg, 4)
+    assert_allclose(res, (True, False))
     out, _ = capsys.readouterr()
-    assert out[:59] == outstr
+    outstr = "Loop over       :  Freq"
+    assert outstr in out
 
-    res = utils.check_opt('parallel', 'freq', 'hqwe', qwehtarg, 4)
-    if use_vml:
-        assert_allclose(callable(res[0]), True)
-        outstr = "   Kernel Opt.     :  Use parallel\n   Loop over       :  Fr"
-    elif not use_ne_eval:
-        assert_allclose(callable(res[0]), False)
-        outstr = "* WARNING :: `numexpr` is not installed, `opt=='parallel'` "
-    else:
-        assert_allclose(callable(res[0]), False)
-        outstr = "* WARNING :: `numexpr` is not installed with VML, `opt=='pa"
-    assert_allclose(res[1:], (True, False))
+    res = utils.check_opt('off', 'fht', [fhtarg[0], 0], 4)
     out, _ = capsys.readouterr()
-    assert out[:59] == outstr
+    outstr = "Loop over       :  Off"
+    assert outstr in out
+    assert_allclose(res, (False, True))
+
+    res = utils.check_opt('freq', 'hqwe', qwehtarg, 4)
+    out, _ = capsys.readouterr()
+    assert_allclose(res, (True, False))
+    outstr = "Loop over       :  Freq"
+    assert outstr in out
 
 
 def test_check_time(capsys):
@@ -1008,26 +991,3 @@ def test_minimum():
     assert d['min_off'] == 1
     assert d['min_res'] == 1e-4
     assert d['min_angle'] == 1e-5
-
-
-def test_spline_backwards_hankel():
-    out1, out2 = utils.spline_backwards_hankel('fht', None, None)
-    assert out1 == {}
-    assert out2 is None
-
-    out1, out2 = utils.spline_backwards_hankel('fht', {'pts_per_dec': 45},
-                                               'parallel')
-    assert out1 == {'pts_per_dec': 45}
-    assert out2 == 'parallel'
-
-    out1, out2 = utils.spline_backwards_hankel('FHT', None, 'spline')
-    assert out1 == {'pts_per_dec': -1}
-    assert out2 is None
-
-    out1, out2 = utils.spline_backwards_hankel('qwe', None, 'spline')
-    assert out1 == {'pts_per_dec': 80}
-    assert out2 is None
-
-    out1, out2 = utils.spline_backwards_hankel('QWE', None, None)
-    assert out1 == {}
-    assert out2 is None
