@@ -34,6 +34,7 @@ root directory for more information regarding the involved licenses.
 
 
 import numpy as np
+from numpy import exp, sqrt  # NOQA
 
 # Imports for halfspace solution
 from scipy.special import ive, kve  # Modified Bessel functions
@@ -153,6 +154,10 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
     This function is called from the function :mod:`kernel.wavenumber`.
 
     """
+    # If not numexpr, we use eval. This keeps it backwards compatible for now.
+    if not use_ne_eval:
+        use_ne_eval = eval
+
     # GTM/GTE have shape (frequency, offset, lambda).
     # gamTM/gamTE have shape (frequency, offset, layer, lambda):
 
@@ -182,15 +187,12 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
             e_zH, e_zV, z_eH = zetaH, zetaV, etaH  # TE: etaV not used
 
         # Uppercase gamma
-        if use_ne_eval:
-            ez_ratio = (e_zH/e_zV)[:, None, :, None]  # NOQA
-            ez_prod = (z_eH*e_zH)[:, None, :, None]  # NOQA
-            lambd2 = use_ne_eval("lambd*lambd")[None, :, None, :]  # NOQA
-            Gam = use_ne_eval("sqrt(ez_ratio*lambd2 + ez_prod)")
-        else:
-            Gam = np.sqrt((e_zH/e_zV)[:, None, :, None] *
-                          (lambd*lambd)[None, :, None, :] +
-                          (z_eH*e_zH)[:, None, :, None])
+        e_zH_bc = e_zH[:, None, :, None]  # NOQA
+        e_zV_bc = e_zV[:, None, :, None]  # NOQA
+        z_eH_bc = z_eH[:, None, :, None]  # NOQA
+        lambd_bc = lambd[None, :, None, :]  # NOQA
+        Gam = use_ne_eval("sqrt(e_zH_bc*lambd_bc*lambd_bc /" +
+                          "e_zV_bc+e_zH_bc*z_eH_bc)")
 
         # Gamma in receiver layer
         lrecGam = Gam[:, :, lrec, :]
@@ -203,18 +205,12 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
             # (Up- (Wu) and downgoing (Wd), in rec layer); Eq 74
             if lrec != depth.size-1:  # No upgoing field prop. if rec in last
                 ddepth = depth[lrec + 1] - zrec
-                if use_ne_eval:
-                    Wu = use_ne_eval("exp(-lrecGam*ddepth)")
-                else:
-                    Wu = np.exp(-lrecGam*ddepth)
+                Wu = use_ne_eval("exp(-lrecGam*ddepth)")
             else:
                 Wu = np.full_like(lrecGam, 0+0j)
             if lrec != 0:     # No downgoing field propagator if rec in first
                 ddepth = zrec - depth[lrec]
-                if use_ne_eval:
-                    Wd = use_ne_eval("exp(-lrecGam*ddepth)")
-                else:
-                    Wd = np.exp(-lrecGam*ddepth)
+                Wd = use_ne_eval("exp(-lrecGam*ddepth)")
             else:
                 Wd = np.full_like(lrecGam, 0+0j)
 
@@ -236,7 +232,7 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
             # Direct field, if it is computed in the wavenumber domain
             if not xdirect:
                 # Direct field
-                directf = np.exp(-lrecGam*abs(zsrc - zrec))
+                directf = use_ne_eval("exp(-lrecGam*abs(zsrc - zrec))")
 
                 # Swap TM for certain <ab>
                 if TM and ab in [11, 12, 13, 14, 15, 21, 22, 23, 24, 25]:
@@ -253,13 +249,10 @@ def greenfct(zsrc, zrec, lsrc, lrec, depth, etaH, etaV, zetaH, zetaV, lambd,
 
             # Calculate exponential factor
             if lrec == depth.size-1:
-                ddepth = 0
+                fexp = np.full_like(lrecGam, 1+0j)
             else:
-                ddepth = depth[lrec+1] - depth[lrec]
-            if use_ne_eval:
+                ddepth = depth[lrec+1] - depth[lrec]  # NOQA
                 fexp = use_ne_eval("exp(-lrecGam*ddepth)")
-            else:
-                fexp = np.exp(-lrecGam*ddepth)
 
             # Sign-switch for Green calculation
             if TM and ab in [11, 12, 13, 21, 22, 23, 14, 24, 15, 25]:
@@ -329,6 +322,9 @@ def reflections(depth, e_zH, Gam, lrec, lsrc, use_ne_eval):
     This function is called from the function :mod:`kernel.greenfct`.
 
     """
+    # If not numexpr, we use eval. This keeps it backwards compatible for now.
+    if not use_ne_eval:
+        use_ne_eval = eval
 
     # Loop over Rp, Rm
     for plus in [True, False]:
@@ -358,32 +354,23 @@ def reflections(depth, e_zH, Gam, lrec, lsrc, use_ne_eval):
         for iz in layer_count:
 
             # Eqs 65, A-12
-            e_zHa = e_zH[:, None, iz+pm, None]
-            Gama = Gam[:, :, iz, :]
-            e_zHb = e_zH[:, None, iz, None]
-            Gamb = Gam[:, :, iz+pm, :]
-            if use_ne_eval:
-                rlocstr = "(e_zHa*Gama - e_zHb*Gamb)/(e_zHa*Gama + e_zHb*Gamb)"
-                rloc = use_ne_eval(rlocstr)
-            else:
-                rloca = e_zHa*Gama
-                rlocb = e_zHb*Gamb
-                rloc = (rloca - rlocb)/(rloca + rlocb)
+            e_zHa = e_zH[:, None, iz+pm, None]  # NOQA
+            Gama = Gam[:, :, iz, :]  # NOQA
+            e_zHb = e_zH[:, None, iz, None]  # NOQA
+            Gamb = Gam[:, :, iz+pm, :]  # NOQA
+            rloc = use_ne_eval("(e_zHa*Gama - e_zHb*Gamb) /" +
+                               "(e_zHa*Gama + e_zHb*Gamb)")
 
             # In first layer tRef = rloc
             if iz == layer_count[0]:
                 tRef = rloc.copy()
             else:
-                ddepth = depth[iz+1+pm]-depth[iz+pm]
-                iGam = Gam[:, :, iz+pm, :]
+                ddepth = depth[iz+1+pm]-depth[iz+pm]  # NOQA
+                iGam = Gam[:, :, iz+pm, :]  # NOQA
 
                 # Eqs 64, A-11
-                if use_ne_eval:
-                    term = use_ne_eval("tRef*exp(-2*iGam*ddepth)")
-                    tRef = use_ne_eval("(rloc + term)/(1 + rloc*term)")
-                else:
-                    term = tRef*np.exp(-2*iGam*ddepth)  # NOQA
-                    tRef = (rloc + term)/(1 + rloc*term)
+                term = use_ne_eval("tRef*exp(-2*iGam*ddepth)")  # NOQA
+                tRef = use_ne_eval("(rloc + term)/(1 + rloc*term)")
 
             # The global reflection coefficient is given back for all layers
             # between and including src- and rec-layer
@@ -423,6 +410,9 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
     This function is called from the function :mod:`kernel.greenfct`.
 
     """
+    # If not numexpr, we use eval. This keeps it backwards compatible for now.
+    if not use_ne_eval:
+        use_ne_eval = eval
 
     # Variables
     nlsr = abs(lsrc-lrec)+1  # nr of layers btw and incl. src and rec layer
@@ -437,7 +427,7 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
 
     # Depths; dp and dm are swapped if up=True
     if lsrc != depth.size-1:
-        ds = depth[lsrc+1]-depth[lsrc]
+        ds = depth[lsrc+1]-depth[lsrc]  # NOQA
         dp = depth[lsrc+1]-zsrc
     dm = zsrc-depth[lsrc]
 
@@ -455,7 +445,7 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
     # Sign-switches
     pm = 1     # + if plus=True, - if plus=False
     if not plus:
-        pm = -1
+        pm = -1  # NOQA
     pup = -1   # + if up=True,   - if up=False
     mupm = 1   # + except if up=True and plus=False
 
@@ -485,25 +475,16 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
             last = 0
             pup = 1
             if not plus:
-                mupm = -1
+                mupm = -1  # NOQA
 
         # Calculate Pu+, Pu-, Pd+, Pd-
+        iGam = Gam[:, :, lsrc, :]
         if lsrc == lrec:  # rec in src layer; Eqs  81/82, A-8/A-9
-            iGam = Gam[:, :, lsrc, :]
             if last_layer:  # If src/rec are in top (up) or bottom (down) layer
-                if use_ne_eval:
-                    P = use_ne_eval("Rmp*exp(-iGam*dm)")
-                else:
-                    P = Rmp*np.exp(-iGam*dm)
+                P = use_ne_eval("Rmp*exp(-iGam*dm)")
             else:           # If src and rec are in any layer in between
-                if use_ne_eval:
-                    Ms = use_ne_eval("1-Rmp*Rpm*exp(-2*iGam*ds)")
-                    P = use_ne_eval("Rmp/Ms*(exp(-iGam*dm) + " +
-                                    "pm*Rpm*exp(-iGam*(ds+dp)))")
-                else:
-                    Ms = 1 - Rmp*Rpm*np.exp(-2*iGam*ds)
-                    P = Rmp/Ms*(np.exp(-iGam*dm) +
-                                pm*Rpm*np.exp(-iGam*(ds+dp)))
+                P = use_ne_eval("Rmp/(1-Rmp*Rpm*exp(-2*iGam*ds)) *" +
+                                "(exp(-iGam*dm) + pm*Rpm*exp(-iGam*(ds+dp)))")
 
         else:           # rec above (up) / below (down) src layer
                         # Eqs  95/96,  A-24/A-25 for rec above src layer
@@ -511,32 +492,20 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
 
             # First compute P_{s-1} (up) / P_{s+1} (down)
             iRpm = Rpm[:, :, rsrcl, :]
-            iGam = Gam[:, :, lsrc, :]
             if first_layer:  # If src is in bottom (up) / top (down) layer
-                if use_ne_eval:
-                    P = use_ne_eval("(1 + iRpm)*mupm*exp(-iGam*dp)")
-                else:
-                    P = (1 + iRpm)*mupm*np.exp(-iGam*dp)
+                P = use_ne_eval("(1 + iRpm)*mupm*exp(-iGam*dp)")
             else:
-                iRmp = Rmp[:, :, rsrcl, :]
-                if use_ne_eval:
-                    Ms = use_ne_eval("(1 - iRmp*iRpm * exp(-2*iGam*ds))")
-                    P = use_ne_eval("((1 + iRpm)*(mupm*exp(-iGam*dp) + " +
-                                    "pm*mupm*iRmp*exp(-iGam * (ds+dm))))/Ms")
-                else:
-                    Ms = 1 - iRmp*iRpm * np.exp(-2*iGam*ds)
-                    P = ((1 + iRpm)*(mupm*np.exp(-iGam*dp) +
-                         pm*mupm*iRmp*np.exp(-iGam * (ds+dm))))/Ms
+                iRmp = Rmp[:, :, rsrcl, :]  # NOQA
+                Ms = use_ne_eval("1 -iRmp*iRpm*exp(-2*iGam*ds)")  # NOQA
+                P = use_ne_eval("((1 + iRpm)*(mupm*exp(-iGam*dp) + " +
+                                "pm*mupm*iRmp*exp(-iGam * (ds+dm))))/Ms")
 
             # If up or down and src is in last but one layer
             if up or (not up and lsrc+1 < depth.size-1):
                 ddepth = depth[lsrc+1-1*pup]-depth[lsrc-1*pup]
                 iRpm = Rpm[:, :, rsrcl-1*pup, :]
                 iGam = Gam[:, :, lsrc-1*pup, :]
-                if use_ne_eval:
-                    P = use_ne_eval("P/(1 + iRpm*exp(-2*iGam * ddepth))")
-                else:
-                    P /= (1 + iRpm*np.exp(-2*iGam * ddepth))
+                P /= use_ne_eval("1 + iRpm*exp(-2*iGam*ddepth)")
 
             # Second compute P for all other layers
             if nlsr > 2:
@@ -544,21 +513,14 @@ def fields(depth, Rp, Rm, Gam, lrec, lsrc, zsrc, ab, TM, use_ne_eval):
                     ddepth = depth[isr+iz+pup+1]-depth[isr+iz+pup]
                     iRpm = Rpm[:, :, iz+pup, :]
                     iGam = Gam[:, :, isr+iz+pup, :]
-                    if use_ne_eval:
-                        P = use_ne_eval("P*(1 + iRpm)*exp(-iGam * ddepth)")
-                    else:
-                        P *= (1 + iRpm)*np.exp(-iGam * ddepth)
+                    P = use_ne_eval("P*(1 + iRpm)*exp(-iGam * ddepth)")
 
                     # If rec/src NOT in first/last layer (up/down)
                     if isr+iz != last:
-                        ddepth = depth[isr+iz+1] - depth[isr+iz]
-                        iRpm = Rpm[:, :, iz, :]
-                        iGam = Gam[:, :, isr+iz, :]
-                        if use_ne_eval:
-                            P = use_ne_eval("P/(1 + " +
-                                            "iRpm*exp(-2*iGam * ddepth))")
-                        else:
-                            P /= 1 + iRpm*np.exp(-2*iGam * ddepth)
+                        ddepth = depth[isr+iz+1] - depth[isr+iz]  # NOQA
+                        iRpm = Rpm[:, :, iz, :]  # NOQA
+                        iGam = Gam[:, :, isr+iz, :]  # NOQA
+                        P /= use_ne_eval("1 + iRpm*exp(-2*iGam*ddepth)")
 
         # Store P in Pu/Pd
         if up:
